@@ -5,9 +5,11 @@ A super simple FastAPI application that allows students to view and sign up
 for extracurricular activities at Mergington High School.
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
+from pydantic import BaseModel, EmailStr
+from passlib.context import CryptContext
 import os
 from pathlib import Path
 
@@ -76,6 +78,55 @@ activities = {
         "participants": ["charlotte@mergington.edu", "henry@mergington.edu"]
     }
 }
+
+# Simple in-memory user store for demo purposes (replace with DB in migration)
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+users = {}
+
+
+class UserCreate(BaseModel):
+    email: EmailStr
+    password: str
+    name: str | None = None
+
+
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str
+
+
+def hash_password(password: str) -> str:
+    return pwd_context.hash(password)
+
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return pwd_context.verify(plain_password, hashed_password)
+
+
+@app.post("/auth/signup")
+def signup(user: UserCreate):
+    email = user.email.lower()
+    if email in users:
+        raise HTTPException(status_code=400, detail="User already exists")
+
+    users[email] = {
+        "email": email,
+        "name": user.name or "",
+        "password_hash": hash_password(user.password),
+    }
+
+    return {"message": "User created"}
+
+
+@app.post("/auth/login")
+def login(credentials: UserLogin):
+    email = credentials.email.lower()
+    user = users.get(email)
+    if not user or not verify_password(credentials.password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    # For now return a simple success message. Replace with JWT token in next steps.
+    return {"message": "Login successful"}
 
 
 @app.get("/")
